@@ -1,5 +1,6 @@
 import json
 import requests
+from datetime import date, timedelta
 
 X_USER_KEY = "<some_key>"
 X_APP_KEY = "<some_app_key>"
@@ -20,18 +21,27 @@ data = json.loads(response.content)
 
 orgs = data["organizations"]
 org_ids = []
+advertisers = []
 
 for org in orgs:
   ids = org["id"]
+  ads = org["name"]
   org_ids.append(str(ids))
+  advertisers.append(ads)
 
+client_merged_list = tuple(zip(org_ids,advertisers))
+
+id_row = []
 campaign_row = []
 campaign_stats_row = []
+
+yesterday_format_1 = date.strftime(date.today() - timedelta(1),"%Y-%m-%d")
+print(yesterday_format_1)
 
 i=0
 while i < len(org_ids):
   campaign_url = baseUrl + org_ids[i] + "/campaigns?filter=status%3Dactive%2Cstatus%3Dpending?include=geo_fences%2Cthird_party_segments%2Cgeo_targets?attributes_only=true?size=300"
-  campaign_stats_url = baseUrl + org_ids[i] + "/campaign_stats?by_campaign=true"
+  campaign_stats_url = baseUrl + org_ids[i] + "/campaign_stats?by_campaign=true&start_date=" + yesterday_format_1 + "&end_date=" + yesterday_format_1
   i += 1
   
   campaign_response = requests.get(campaign_url, headers=params)
@@ -42,27 +52,33 @@ while i < len(org_ids):
   campaign_stats_data = json.loads(campaign_stats_response.content)
   campaign_stats_row.append(campaign_stats_data)
 
-from google.colab import files
+from google.colab import files #remove this when running script outside Colab
 import pandas as pd
-from datetime import date
 
-export_campaigns = []  
+export_campaigns = []
 for j in campaign_row:
   for x in j["campaigns"]:
     client_resource = x["resource"]
+    print(client_resource)
+    # strip all urls in client_resource variable so it only pulls the client id
+    client_ids = client_resource.split("/")[5]
     campaign_name = x["name"]
     campaign_id = x["id"]
     campaign_status = x["status"]
     campaign_type = x["campaign_type"]["name"]
     start_date = x["start_date"]
     end_date = x["end_date"]
-    total_budget = x["total_budget"]
+    total_NET_budget = x["total_budget"]
     
-    export_campaigns.append([client_resource, campaign_name, campaign_id, campaign_status, campaign_type, start_date, end_date, total_budget])
-    campaign_df = pd.DataFrame(export_campaigns)
+    # match back client ids in the tuple to the client ids in client_ids variable - match back appropriate client name
+    for a,b in client_merged_list:
+      if str(a) == str(client_ids):
+        Advertiser = b
+    
+        export_campaigns.append([yesterday_format_1, Advertiser, client_ids, campaign_name, campaign_id, campaign_status, campaign_type, start_date, end_date, total_NET_budget])
+        campaign_df = pd.DataFrame(export_campaigns)
 
-report_date = date.today().strftime("%Y-%m-%d")
-remove_from_string = ["Daily Stats | Campaign ","|",report_date]    
+remove_from_string = ["Daily Stats | Campaign ","|", yesterday_format_1]    
     
 export_campaign_stats = [];
 for k in campaign_stats_row:
@@ -86,11 +102,11 @@ for k in campaign_stats_row:
     
     export_campaign_stats.append([int_title, campaignstats_resource, impressions, clicks, ctr, cpm, cpc, cpa, weighted_actions, total_spend])
     campaign_stats_df = pd.DataFrame(export_campaign_stats)
-
-today = date.today().strftime("%Y%m%d")
   
-campaign_df.columns = ["resource","campaign_name","campaign_id","campaign_status","campaign_type","start_date","end_date","total_budget"] 
+campaign_df.columns = ["date","Advertiser","client_id","campaign_name","campaign_id","campaign_status","campaign_type","start_date","end_date","total_NET_budget"] 
 campaign_stats_df.columns = ["campaign_id","campaignstats_resource","impressions","clicks","ctr","cpm","cpc","cpa","weighted_actions","total_spend"]
 
+yesterday_format_2 = date.strftime(date.today() - timedelta(1),"%Y%m%d")
+
 combined_data = pd.merge_ordered(campaign_df, campaign_stats_df, on='campaign_id')
-combined_data.to_csv('sf_data_' + today + '.csv')
+combined_data.to_csv('simplifi_' + yesterday_format_2 + '.csv')
